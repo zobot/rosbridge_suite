@@ -1,42 +1,12 @@
-# Software License Agreement (BSD License)
-#
-# Copyright (c) 2012, Willow Garage, Inc.
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above
-#    copyright notice, this list of conditions and the following
-#    disclaimer in the documentation and/or other materials provided
-#    with the distribution.
-#  * Neither the name of Willow Garage, Inc. nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
-
 from threading import Lock
 from functools import partial
 from rospy import loginfo
 from rosbridge_library.capability import Capability
 from rosbridge_library.internal.subscribers import manager
 from rosbridge_library.internal.subscription_modifiers import MessageHandler
-from rosbridge_library.internal.pngcompression import encode
+#from rosbridge_library.internal.pngcompression import encode
+import rosbridge_library.internal.pngcompression as pngcompression
+import rosbridge_library.internal.gzipcompression as gzipcompression
 try:
     from ujson import dumps
 except ImportError:
@@ -96,7 +66,7 @@ class Subscription():
         fragment_size   -- None if no fragmentation, or the maximum length of
         allowed outgoing messages
         compression     -- "none" if no compression, or some other value if
-        compression is to be used (current valid values are 'png')
+        compression is to be used (current valid values are 'png' and 'gzip')
 
          """
         # Subscribe with the manager. This will propagate any exceptions
@@ -168,7 +138,14 @@ class Subscription():
             self.fragment_size = None
         else:
             self.fragment_size = min(frags)
-        self.compression = "png" if "png" in f("compression") else "none"
+        # new code
+        if "png" in f("compression"):
+            self.compression = "png"
+        elif "gzip" in f("compression"):
+            self.compression = "gzip"
+        else:
+            self.compression = "none"
+        #self.compression = "png" if "png" in f("compression") else "none"
 
         with self.handler_lock:
             self.handler = self.handler.set_throttle_rate(self.throttle_rate)
@@ -253,7 +230,10 @@ class Subscribe(Capability):
         outgoing_msg = {"op": "publish", "topic": topic, "msg": message}
         if compression=="png":
             outgoing_msg_dumped = dumps(outgoing_msg)
-            outgoing_msg = {"op": "png", "data": encode(outgoing_msg_dumped)}
+            outgoing_msg = {"op": "png", "data": pngcompression.encode(outgoing_msg_dumped)}
+        elif compression=="gzip":
+            outgoing_msg_dumped = dumps(outgoing_msg)
+            outgoing_msg = {"op": "gzip", "data": gzipcompression.encode(outgoing_msg_dumped)}
         self.protocol.send(outgoing_msg)
 
     def finish(self):
